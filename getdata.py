@@ -101,7 +101,8 @@ class GetData:
                     print(f"{l}のキーが存在しません。（success_contributionに含まれていない->success_labelにいない->途中離脱？）")
             df = pd.DataFrame(part_contrib, columns=round_column, index=part_index)
             dfs[g] = df
-            print(df)
+            if self.debug:
+                print(df)
         if self.debug:
             print(dfs)
         return dfs
@@ -135,7 +136,7 @@ class GetData:
 
         return target_success_group, target_failed_group
 
-    def get_participant_pledges(self) -> dict[int, list[int, int, int]]:
+    def get_participant_pledges(self) -> dict[int, list[int]]:
         """
         各参加者のラウンド1,6での寄付提案額を返す
         labelをキーとして、[group, round1_pledge, round6_pledge]で返す
@@ -159,8 +160,7 @@ class GetData:
         """
         dropout_df = self.data_df[self.data_df[self.COLUMNS["comp_status"]] == 'timeout_decision']
         if dropout_df.empty:
-            print("離脱者がいません。")
-            return {}
+            return {-1: "離脱者がいません。"}
 
         dropout_timing = {}
         for i in range(1, 11):
@@ -173,12 +173,39 @@ class GetData:
                     if self.debug:
                         print(self.data_df[self.data_df[self.COLUMNS['id']] == dropout][self.COLUMNS['label']].iloc[0], "：退出ラウンド -", i)
         return dropout_timing
+    
+    def __str__(self):
+        ungrouped_reason = []
+        dropouts = []
+        for l, r in self.get_ungrouped_reason().items():
+            ungrouped_reason.append(f"{l}: {r}")
+        for l, t in self.get_dropout_timing().items():
+            if l == -1:
+                dropouts.append(f"{t}")
+                break
+            dropouts.append(f"{l}: Round {t} で離脱")
+        s = [
+            f"4人ちゃんと集まったグループ数：{len(self.group)}",
+            str(self.group),
+            "",
+            f"4人集まらなかったグループ数：{len(self.ungrouped)}",
+            str(self.ungrouped),
+            "",
+            f"正規に終了しなかった参加者数：{len(self.get_ungrouped_reason())}",
+            f"4人そろわなかったグループの参加者の失敗理由：",
+            "\n".join(ungrouped_reason),
+            "",
+            "途中離脱(ドロップアウト)した人：",
+            "\n".join(dropouts),
+        ]
+        return "\n".join(s)
 
 class GraphPlot:
-    def __init__(self, data_loader: GetData, debug: bool = False):
+    def __init__(self, data_loader: GetData, savefig: bool = False, debug: bool = False):
         self.data_loader = data_loader
         self.debug = debug
         self.dir_path = data_loader.DIR_PATH
+        self.savefig = savefig
 
     def _plot(
             self,
@@ -190,9 +217,16 @@ class GraphPlot:
             savefig: bool = False,
             figtitle: str = None,
             legend: bool = None,
-            ) -> Axes:
+            ) -> None:
+        """
+        表示の共通処理、表示または保存するための内部メソッド
+        """
         # save dir check
-        os.makedirs(f"{self.dir_path}/{figtitle}", exist_ok=True)
+        if figtitle:
+            savefig_path = f"{self.dir_path}/Figures/{figtitle}"
+        else:
+            savefig_path = f"{self.dir_path}/Figures"
+        os.makedirs(savefig_path, exist_ok=True)
 
         if title:
             ax.set_title(title)
@@ -205,35 +239,53 @@ class GraphPlot:
         if legend:
             ax.legend()
         plt.tight_layout()
-        if savefig:
+
+        if self.savefig:
             try:
-                plt.savefig(f"{self.dir_path}/{figtitle}/{title.replace(' ', '_')}")
+                plt.savefig(f"{savefig_path}/{title.replace(' ', '_')}")
             except Exception as e:
-                raise Exception(f"plt.savefig : {e}")
+                print(f"plt.savefig : {e}")
         else:
             plt.show()
-        return ax
+        plt.close()
 
-    def plot_total_contribution(self, savefig: bool = False) -> None:
+    def plot_total_contribution(self, pledges: bool = False, savefig: bool = None) -> None:
         """
-        グループごとに、貢献額(contribution)を累積棒グラフ、目標額(target)を直線にて表示する
+        グループごとに、貢献額(contribution)を累積棒グラフ、目標額(target)を直線にて表示する。
+        オプション：pledges = True のとき、1,6ラウンドでの提案額の直線を追加する。
         """
+        if savefig:
+            self.savefig = savefig
+
+        figtitle = "total_contribution"
+        if pledges:
+            figtitle = "total_contribution_include_pledges"
+            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            participant_pledges = self.data_loader.get_participant_pledges()
+
         dfs = self.data_loader.set_contribution_by_group()
         group_target = self.data_loader.get_group_target()
-        for g in self.data_loader.group:
+        for g, labels in self.data_loader.group.items():
             df = dfs[g].cumsum(axis=1)
             df = df.T
 
             ax = df.plot(kind='bar', stacked=True)
             ax.axhline(y=group_target[g], color='red', linestyle='--', label='Target')            
+            ax.legend()
+
+            if pledges:
+                for i, l in enumerate(labels):
+                    r1_pledge = participant_pledges[l][1]
+                    r6_pledge = participant_pledges[l][2]
+                    ax.plot([0, 5], [r1_pledge, r1_pledge], color=colors[i], linestyle='--', label=f'{l}_predges')
+                    ax.plot([5, 9], [r6_pledge, r6_pledge], color=colors[i], linestyle='--', label=f'{l}_predges')                
+            
             self._plot(
                 ax=ax,
                 title=f"Group {g}",
                 ylabel="Total contribution (ECU)", 
                 ylim=(0, 160),
-                savefig=savefig,
-                figtitle="total_contribution",
-                legend=True
+                figtitle=figtitle,
             )
             if self.debug:
                 break
@@ -242,6 +294,9 @@ class GraphPlot:
         """
         グループごとに、各ラウンドで、いくら貢献したかを折れ線グラフにて表示する。
         """
+        if savefig:
+            self.savefig = savefig
+        
         dfs = self.data_loader.set_contribution_by_group()
         for g in self.data_loader.group:
             df = dfs[g]
@@ -252,45 +307,8 @@ class GraphPlot:
                 ax=ax, title=f"Group {g}",
                 ylabel="Contribution per round (ECU)",
                 yticks=[0, 2, 4],
-                savefig=savefig,
                 figtitle="contribution_per_round",
                 legend=True,
-            )
-            if self.debug:
-                break
-
-    def plot_contribution_per_round_include_pledges(self, savefig: bool = False):
-        """
-        貢献額の累積棒グラフに追加して、1ラウンドと6ラウンドでの提案額を表示する。
-        """
-        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-
-        participant_pledges = self.data_loader.get_participant_pledges()
-        dfs = self.data_loader.set_contribution_by_group()
-        group_target = self.data_loader.get_group_target()
-
-        for g, labels in self.data_loader.group.items():
-            df = dfs[g].cumsum(axis=1)
-            df = df.T
-
-            ax = df.plot(kind='bar', stacked=True)
-            ax.axhline(y=group_target[g], color='red', linestyle='--', label='Target')
-            ax.legend()
-            
-            # 各参加者の提案額を加える
-            for i, l in enumerate(labels):
-                r1_pledge = participant_pledges[l][1]
-                r6_pledge = participant_pledges[l][2]
-                ax.plot([0, 5], [r1_pledge, r1_pledge], color=colors[i], linestyle='--', label=f'{l}_predges')
-                ax.plot([5, 9], [r6_pledge, r6_pledge], color=colors[i], linestyle='--', label=f'{l}_predges')
-            
-            self._plot(
-                ax,
-                title=f"Group {g}",
-                ylabel="Total contribution (ECU)",
-                ylim=(0, 170),
-                savefig=savefig,
-                figtitle="contribution_per_round_include_pledges"
             )
             if self.debug:
                 break
@@ -299,48 +317,32 @@ class GraphPlot:
         """
         成功したグループの割合を棒グラフで表示する。
         """
+        if savefig:
+            self.savefig = savefig
+
         success_group, failed_group = self.data_loader.split_target_success_orNot()
         label = ["Success", "Failed"]
         success_or_not_group = [len(success_group), len(failed_group)]
         success_or_not_per_group = [x/sum(success_or_not_group) for x in success_or_not_group]
-        print(success_or_not_per_group)
 
-        plt.bar(label, success_or_not_per_group, width=0.8)
-        plt.title("Success or Failed Percentage")
-        plt.tight_layout()
-        if savefig:
-            pass
-        plt.show()
+        fig, ax = plt.subplots()
+        ax.bar(label, success_or_not_per_group, width=0.8)
+        self._plot(
+            ax=ax,
+            title="Success or Failed Percentage"
+        )
 
 if __name__ == "__main__":
-    def p(s:str = None):
-        print(s)
-
     g = GetData(
-        dirpath="C:/Users/横山 瑞季/Downloads/0807Experiment",
+        dirpath="C:/Users/iruka/OneDrive - Shizuoka University/研究/20250807実験の手伝い/0807Experiment/CRD_DataAnalyse",
         filename="all_apps_wide-2025-08-07.csv",
     )
 
-    p(f"4人ちゃんと集まったグループ数：{len(g.group)}")
-    p(g.group)
+    # いろいろ情報を返す
+    print(g)
 
-    p()
-
-    p(f"4人集まらなかったグループ数：{len(g.ungrouped)}")
-    p(g.ungrouped)
-
-    p(f"正規に終了しなかった参加者数：{len(g.get_ungrouped_reason())}")
-
-    p(f"4人そろわなかったグループの参加者の失敗理由：")
-    for l, r in g.get_ungrouped_reason().items():
-        p(f"{l}: {r}")
-
-    # p("途中離脱(ドロップアウト)した人：")
-    # for l, t in g.get_dropout_timing().items():
-    #     p(f"{l}: Round {t} で離脱")
-
-    gp = GraphPlot(g)
-    gp.plot_total_contribution(savefig=True)
-    gp.plot_contribution_per_round(savefig=True)
-    gp.plot_contribution_per_round_include_pledges(savefig=True)
-    gp.plot_success_group_percentage(savefig=True)
+    gp = GraphPlot(g, savefig=True)
+    # gp.plot_total_contribution()
+    # gp.plot_total_contribution(pledges=True)
+    # gp.plot_contribution_per_round()
+    # gp.plot_success_group_percentage()
