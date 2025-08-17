@@ -27,7 +27,7 @@ class GetData:
         ):
         self.DIR_PATH = dirpath
         self.debug = debug
-        
+        self.filename = filename
         self._load_csv(filename)
 
     def _load_csv(self, filename: str) -> None:
@@ -173,8 +173,9 @@ class GetData:
                     if self.debug:
                         print(self.data_df[self.data_df[self.COLUMNS['id']] == dropout][self.COLUMNS['label']].iloc[0], "：退出ラウンド -", i)
         return dropout_timing
-    
+
     def __str__(self):
+        """ 簡単にデータを表示 """
         ungrouped_reason = []
         dropouts = []
         for l, r in self.get_ungrouped_reason().items():
@@ -221,11 +222,12 @@ class GraphPlot:
         """
         表示の共通処理、表示または保存するための内部メソッド
         """
-        # save dir check
+        csv_date = "".join(self.data_loader.filename.replace(".csv", '').split('-')[1:])
+        # save dir check'
         if figtitle:
-            savefig_path = f"{self.dir_path}/Figures/{figtitle}"
+            savefig_path = f"{self.dir_path}/{csv_date}_Figures/{figtitle}"
         else:
-            savefig_path = f"{self.dir_path}/Figures"
+            savefig_path = f"{self.dir_path}/{csv_date}_Figures"
         os.makedirs(savefig_path, exist_ok=True)
 
         if title:
@@ -333,16 +335,22 @@ class GraphPlot:
         )
 
 if __name__ == "__main__":
-    g = GetData(
-        dirpath="C:/Users/iruka/OneDrive - Shizuoka University/研究/20250807実験の手伝い/0807Experiment/CRD_DataAnalyse",
+    g_normal = GetData(
+        dirpath="./",
+        filename="all_apps_wide-2025-07-24.csv"
+    )
+
+    g_private = GetData(
+        dirpath="./",
         filename="all_apps_wide-2025-08-07.csv",
     )
 
-    # いろいろ情報を返す
-    print(g)
-
-    gp = GraphPlot(g, savefig=True)
-    # gp.plot_total_contribution()
-    # gp.plot_total_contribution(pledges=True)
-    # gp.plot_contribution_per_round()
-    # gp.plot_success_group_percentage()
+    for g in [g_normal, g_private]:
+        # いろいろ情報を返す
+        print(g)
+        
+        gp = GraphPlot(g, savefig=True)
+        gp.plot_total_contribution()
+        gp.plot_total_contribution(pledges=True)
+        gp.plot_contribution_per_round()
+        gp.plot_success_group_percentage()
