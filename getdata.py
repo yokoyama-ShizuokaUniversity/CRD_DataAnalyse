@@ -17,6 +17,7 @@ class GetData:
         "r1_pledge": 'crd_cost_information.1.player.pledge',
         "r6_pledge": 'crd_cost_information.6.player.pledge',
         "id": "participant.id_in_session",
+        "surveys": "crd_cost_information_survey"
     }
     
     def __init__(
@@ -173,6 +174,19 @@ class GetData:
                     if self.debug:
                         print(self.data_df[self.data_df[self.COLUMNS['id']] == dropout][self.COLUMNS['label']].iloc[0], "：退出ラウンド -", i)
         return dropout_timing
+
+    def get_surveys(self) -> pd.DataFrame:
+        """
+        ラベルに対応した、アンケート回答結果を返すdf
+        """
+        columns = self.data_df.columns.tolist()
+        grep_survey_columns = [c for c in columns if self.COLUMNS["surveys"] in c]
+        df = self.data_df[self.COLUMNS["label"]]
+        for c in grep_survey_columns:
+            df = pd.concat([df, self.data_df[c]], axis=1)
+        if self.debug:
+            print(df)
+        return df
 
     def __str__(self):
         """ 簡単にデータを表示 """
@@ -345,12 +359,14 @@ if __name__ == "__main__":
         filename="all_apps_wide-2025-08-07.csv",
     )
 
-    for g in [g_normal, g_private]:
-        # いろいろ情報を返す
-        print(g)
+    print(g_normal.get_surveys())
+
+    # for g in [g_normal, g_private]:
+    #     # いろいろ情報を返す
+    #     print(g)
         
-        gp = GraphPlot(g, savefig=True)
-        gp.plot_total_contribution()
-        gp.plot_total_contribution(pledges=True)
-        gp.plot_contribution_per_round()
-        gp.plot_success_group_percentage()
+    #     gp = GraphPlot(g, savefig=True)
+    #     gp.plot_total_contribution()
+    #     gp.plot_total_contribution(pledges=True)
+    #     gp.plot_contribution_per_round()
+    #     gp.plot_success_group_percentage()
