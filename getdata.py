@@ -359,7 +359,8 @@ if __name__ == "__main__":
         filename="all_apps_wide-2025-08-07.csv",
     )
 
-    print(g_normal.get_surveys())
+    print(g_normal)
+    print(g_private)
 
     # for g in [g_normal, g_private]:
     #     # いろいろ情報を返す
