@@ -541,15 +541,13 @@ class GraphPlot:
         ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
         if bartype == "white":
             ax.text(5, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
-            # 枠内に収める
-            ax.legend(fontsize=16, loc="lower left", bbox_to_anchor=(0, 0.1))
-            # 枠外案
-            # ax.legend(fontsize=16, loc="lower right", bbox_to_anchor=(1, -0.15))
-            # ax.set_xlabel("Group (sorted)", fontsize=20, ha="left", x=0.2, labelpad=8)
         else:
             ax.text(0, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
-            ax.legend(fontsize=16, loc="upper left")
-            ax.set_xlabel("Group (sorted)", fontsize=20)
+        # 枠内に収める
+        # ax.legend(fontsize=16, loc="lower left", bbox_to_anchor=(0, 0.1))
+        # 枠外案
+        ax.legend(fontsize=16, loc="lower right", bbox_to_anchor=(1, -0.15))
+        ax.set_xlabel("Group (sorted)", fontsize=20, ha="left", x=0.2, labelpad=8)
         ax.set_ylabel("Final public account (ECUs)", fontsize=20)
         ax.tick_params(axis="x", length=0)
         ax.tick_params(axis="y", labelsize=14)
