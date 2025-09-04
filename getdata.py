@@ -353,7 +353,7 @@ class GraphPlot:
         if yticks:
             ax.set_yticks(yticks)
         if legend:
-            ax.legend(fontsize=16, loc="upper left")
+            ax.legend()
         plt.tight_layout()
 
         if figname is None:
@@ -477,6 +477,7 @@ class GraphPlot:
         ax.set_xticks([0, 1])
         ax.set_xticklabels(label, fontsize=20)
         ax.tick_params(axis="x", length=0)
+        ax.tick_params(axis="y", labelsize=14)
         ax.set_ylabel("Fraction of successful groups", fontsize=20)
         self._plot(
             ax=ax,
@@ -502,8 +503,9 @@ class GraphPlot:
         fig, ax = plt.subplots()
         ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black", label="Individual")
         ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
-        ax.text(1, contrib_average+1, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
+        ax.text(0, contrib_average+0.75, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
         ax.tick_params(axis="x", length=0)
+        ax.tick_params(axis="y", labelsize=14)
         ax.set_xticklabels("")
         ax.set_ylabel("Individual total contributions (ECUs)", fontsize=16)
         ax.set_xlabel("Individual (sorted)", fontsize=20)
@@ -511,11 +513,14 @@ class GraphPlot:
         self._plot(
             ax=ax,
             ylim=(0, 42),
-            legend=True,
             figname=figname
         )
     
     def plot_group_contrib(self, savefig: bool = False, bartype: str = "white"):
+        """
+        9/3
+        Groupの貢献額
+        """
         contrib_dict = self.data_loader.get_contributions()
         group_target = self.data_loader.get_group_target()
         print(contrib_dict)
@@ -531,24 +536,29 @@ class GraphPlot:
         contrib_average = sum(y) / len(y)
 
         fig, ax = plt.subplots()
-        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black", label="Group")
+        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black")
         ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
-        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
+        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
         if bartype == "white":
-            ax.text(12, contrib_average-11, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+            ax.text(5, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+            # 枠内に収める
+            ax.legend(fontsize=16, loc="lower left", bbox_to_anchor=(0, 0.1))
+            # 枠外案
+            # ax.legend(fontsize=16, loc="lower right", bbox_to_anchor=(1, -0.15))
+            # ax.set_xlabel("Group (sorted)", fontsize=20, ha="left", x=0.2, labelpad=8)
         else:
-            ax.text(0, contrib_average+1.5, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
-
-        ax.set_xlabel("Group (sorted)", fontsize=20)
+            ax.text(0, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+            ax.legend(fontsize=16, loc="upper left")
+            ax.set_xlabel("Group (sorted)", fontsize=20)
         ax.set_ylabel("Final public account (ECUs)", fontsize=20)
         ax.tick_params(axis="x", length=0)
+        ax.tick_params(axis="y", labelsize=14)
         ax.set_xticklabels("")
         figname = "group_contrib" if bartype == "white" else "group_contrib_+info"
         self._plot(
             ax=ax,
             ylim=(0, 165),
             figname=figname,
-            legend=True,
         )
 
 if __name__ == "__main__":
