@@ -1,4 +1,5 @@
 import os
+import csv
 import pandas as pd
 import matplotlib.pyplot as plt
 import ast
@@ -26,14 +27,18 @@ class GetData:
             filename: str,
             debug: bool = False
         ):
-        self.DIR_PATH = dirpath
+        self.dir_path = dirpath
         self.debug = debug
         self.filename = filename
         self._load_csv(filename)
 
+        # 日付をファイル名から抽出
+        self.date = filename.split('-')[1:]
+        self.date[2] = self.date[2].split('.')[0]
+
     def _load_csv(self, filename: str) -> None:
         """CSVを読み込んでデータフレームとグループ分割を準備"""
-        self.data_df = pd.read_csv(f"{self.DIR_PATH}/{filename}")
+        self.data_df = pd.read_csv(f"{self.dir_path}/{filename}")
         groups = self.data_df.groupby(self.COLUMNS["group"])[self.COLUMNS["label"]].apply(list)
         self.group, self.ungrouped = (
             {g: labels for g, labels in groups.items() if len(labels) == 4},
@@ -68,6 +73,21 @@ class GetData:
         success_label = self.data_df[self.data_df[self.COLUMNS["comp_status"]] == 'success'][self.COLUMNS['label']].tolist()
         ungrouped_label = self.data_df[self.data_df[self.COLUMNS["comp_status"]] == 'ungrouped'][self.COLUMNS['label']].tolist()
         return success_label, ungrouped_label
+
+    def get_contributions(self) -> dict[int, list[int]]:
+        """
+        ラベルに対する各ラウンドの寄付額を辞書で返す
+        """
+        contribute_columns = [f'crd_cost_information.{i}.player.contribution' for i in range(1, 11)]
+        label = self.data_df[self.COLUMNS["label"]].tolist()
+        print(label)
+        success_contribution = {}
+        for sl in label:
+            row = self.data_df[self.data_df[self.COLUMNS["label"]] == sl][contribute_columns]
+            success_contribution[sl] = row.iloc[0].tolist()
+        if self.debug:
+            print(success_contribution)
+        return success_contribution
 
     def get_success_contribution(self) -> dict[int, list[int]]:
         """
@@ -215,22 +235,99 @@ class GetData:
         ]
         return "\n".join(s)
 
+class YahooTask:
+    def __init__(self, task_filename: str, experiment_cls: GetData=None, keywords: dict = None):
+        self.gd = experiment_cls
+        self.task_df = pd.read_csv(f"{self.gd.dir_path}/{task_filename}", sep='\t', header=None, encoding='utf8')
+        if keywords:
+            self.keywords = keywords
+        else:
+            # 2025-07の実験にて使用したキーワード
+            self.keywords = {
+                "A7K3B": "Success",
+                "X7R5T": "Ungrouped",
+            }
+
+    def _extract_yahootask_columns(self) -> pd.DataFrame:
+        task_list_concat_df = pd.DataFrame()
+        task_list_concat_df['participant.label'] = self.task_df[4].str[-7:]
+        task_list_concat_df['participant.label'] = task_list_concat_df['participant.label'].str.extract(r'^l=(\d+)$').astype('int')
+        task_list_concat_df['yahoo_id'] = self.task_df[8]
+        task_list_concat_df['key_word'] = self.task_df[7]
+        task_list_concat_df['completion_status'] = task_list_concat_df['key_word'].map(self.keywords).fillna('Failed')
+
+        return task_list_concat_df[task_list_concat_df['key_word'].map(self.keywords).notna()]
+    
+    def _extract_experiment_columns(self) -> pd.DataFrame:
+        pg_concat_df = pd.DataFrame()
+        pg_concat_df['participant.label'] = self.gd.data_df['participant.label']
+        pg_concat_df['participant.payoff'] = self.gd.data_df.iloc[:,12]
+        pg_concat_df['PayPay_exchanged'] = pg_concat_df['participant.payoff'].apply(lambda x: x * 4 + 100) # ECUからPayPayへの変換式はここで指定
+        pg_concat_df['PayPay_ceiled'] = pg_concat_df["PayPay_exchanged"].apply(lambda x: ((x+9) // 10)*10) # ホワイトリストのために1の位切り上げたリスト
+        pg_concat_df = pg_concat_df.dropna()
+        pg_concat_df = pg_concat_df.astype('int')
+
+        return pg_concat_df
+    
+    def merge_result(self) -> pd.DataFrame:
+        return pd.merge(
+            self._extract_yahootask_columns(),
+            self._extract_experiment_columns(),
+            on='participant.label',
+            how='left'
+        )
+    
+    def create_whitelist(self) -> None:
+        merged_df = self.merge_result()
+        paypay_whitelist_df = merged_df[["yahoo_id", "PayPay_exchanged", "PayPay_ceiled"]]
+        whitelist_dict = {}
+        for _, row in paypay_whitelist_df.iterrows():
+            whitelist_dict[row["PayPay_ceiled"]] = []
+        for _, row in paypay_whitelist_df.iterrows():
+            whitelist_dict[row["PayPay_ceiled"]] += [row["yahoo_id"]]
+        os.makedirs(f"{self.gd.dir_path}/whitelists", exist_ok=True)
+        for k in whitelist_dict.keys():
+            yahooid_list = whitelist_dict[k]
+            print(f'{k}: {len(yahooid_list)}')
+            with open(f"{self.gd.dir_path}/whitelists/{"".join(self.gd.date)}_{k}pt.txt", 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(yahooid_list)
+        print(sorted(whitelist_dict.keys()))
+    
+    def show_point_histgram(self) -> None:
+        merged_df = self.merge_result()
+        paypay_payoff = merged_df["PayPay_exchanged"].tolist()
+        paypay_task_num = set(paypay_payoff)
+        len(paypay_task_num)
+        plt.hist(paypay_payoff, bins=100)
+        plt.title(f"{"".join(self.gd.date)} -  PayPay Point")
+        plt.show()
+
 class GraphPlot:
-    def __init__(self, data_loader: GetData, savefig: bool = False, debug: bool = False):
+    def __init__(self, data_loader: GetData, savefig: bool = False, debug: bool = False, figtype: str = None):
         self.data_loader = data_loader
         self.debug = debug
-        self.dir_path = data_loader.DIR_PATH
+        self.dir_path = self.data_loader.dir_path
         self.savefig = savefig
+        allowed_figtype = ["eps", "png"]
+        if figtype in allowed_figtype:
+            self.figtype = figtype
+        elif figtype is None:
+            self.figtype = "png"
+        else:
+            raise Exception(f"figtype Error : '{figtype}' is not allowed figtype")
 
     def _plot(
             self,
             ax: Axes,
             title: str = None,
             ylabel: str = None,
+            xlabel: str = None,
             ylim: tuple[float, float] = None,
             yticks: list = None,
             savefig: bool = False,
             figtitle: str = None,
+            figname: str = None,
             legend: bool = None,
             ) -> None:
         """
@@ -245,20 +342,26 @@ class GraphPlot:
         os.makedirs(savefig_path, exist_ok=True)
 
         if title:
+            figname = title
             ax.set_title(title)
         if ylabel:
             ax.set_ylabel(ylabel)
+        if xlabel:
+            ax.set_xlabel(xlabel)
         if ylim:
             ax.set_ylim(ylim[0], ylim[1])
         if yticks:
             ax.set_yticks(yticks)
         if legend:
-            ax.legend()
+            ax.legend(fontsize=16, loc="upper left")
         plt.tight_layout()
+
+        if figname is None:
+            figname = "Untitled"
 
         if self.savefig:
             try:
-                plt.savefig(f"{savefig_path}/{title.replace(' ', '_')}")
+                plt.savefig(f"{savefig_path}/{figname.replace(' ', '_')}.{self.figtype}")
             except Exception as e:
                 print(f"plt.savefig : {e}")
         else:
@@ -344,30 +447,130 @@ class GraphPlot:
         fig, ax = plt.subplots()
         ax.bar(label, success_or_not_per_group, width=0.8)
         self._plot(
+            ax=ax
+        )
+
+    def plot_success_percentage_ver2(self, other_datacls: GetData = None, savefig: bool = False):
+        """
+        9/3追記
+        グループの割合を棒グラフで表示する。1枚にまとめ、成功率だけ表示
+        """
+        if savefig:
+            self.savefig = savefig
+
+        if other_datacls is None:
+            raise Exception("比較する方のインスタンスを渡してください。")
+        print(f"[Uncertainty] DataLoader : {self.data_loader.filename}")
+        print(f"[Uncertainty + Info] DataLoader : {other_datacls.filename}")
+
+        c_success_grp, c_failed_grp = self.data_loader.split_target_success_orNot()
+        cpi_success_grp, cpi_failed_grp = other_datacls.split_target_success_orNot()
+
+        c_success_rate = len(c_success_grp) / (len(c_success_grp) + len(c_failed_grp))
+        cpi_success_rate = len(cpi_success_grp) / (len(cpi_success_grp) + len(cpi_failed_grp))
+
+        label = ["Uncertainty", "Uncertainty + Info"]
+
+        fig, ax = plt.subplots()
+        ax.bar([0], [c_success_rate], width=0.8, facecolor="white", edgecolor="black", linewidth=2)
+        ax.bar([1], [cpi_success_rate], width=0.8, facecolor="black", edgecolor="black", linewidth=2)
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(label, fontsize=20)
+        ax.tick_params(axis="x", length=0)
+        ax.set_ylabel("Fraction of successful groups", fontsize=20)
+        self._plot(
             ax=ax,
-            title="Success or Failed Percentage"
+            ylim=(0, 0.8),
+            figname="Success_percentage"
+        )
+
+    def plot_individual_contrib(self, savefig: bool = False, bartype: str = "white"):
+        """
+        9/3
+        各参加者(individual)の貢献額
+        """
+        if savefig:
+            self.savefig = savefig
+        
+        contrib_dict = self.data_loader.get_success_contribution()
+        items = [(k, sum(v)) for k, v in contrib_dict.items()]
+        sorted_contrib = sorted(items, key=lambda x: x[1])
+        y = [v[1] for v in sorted_contrib]
+
+        contrib_average = sum(y) / len(y)
+
+        fig, ax = plt.subplots()
+        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black", label="Individual")
+        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
+        ax.text(1, contrib_average+1, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
+        ax.tick_params(axis="x", length=0)
+        ax.set_xticklabels("")
+        ax.set_ylabel("Individual total contributions (ECUs)", fontsize=16)
+        ax.set_xlabel("Individual (sorted)", fontsize=20)
+        figname = "individual_contrib" if bartype == "white" else "individual_contrib_+info"
+        self._plot(
+            ax=ax,
+            ylim=(0, 42),
+            legend=True,
+            figname=figname
+        )
+    
+    def plot_group_contrib(self, savefig: bool = False, bartype: str = "white"):
+        contrib_dict = self.data_loader.get_contributions()
+        group_target = self.data_loader.get_group_target()
+        print(contrib_dict)
+        group_contrib = []
+        for k, v in self.data_loader.group.items():
+            group_c = 0
+            for l in v:
+                group_c += sum(contrib_dict[l])
+            group_contrib.append((k, group_c))
+        sorted_contrib = sorted(group_contrib, key=lambda x: x[1])
+        y = [v[1] for v in sorted_contrib]
+        target_y = [group_target[v[0]] for v in sorted_contrib]
+        contrib_average = sum(y) / len(y)
+
+        fig, ax = plt.subplots()
+        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black", label="Group")
+        ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
+        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
+        if bartype == "white":
+            ax.text(12, contrib_average-11, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+        else:
+            ax.text(0, contrib_average+1.5, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+
+        ax.set_xlabel("Group (sorted)", fontsize=20)
+        ax.set_ylabel("Final public account (ECUs)", fontsize=20)
+        ax.tick_params(axis="x", length=0)
+        ax.set_xticklabels("")
+        figname = "group_contrib" if bartype == "white" else "group_contrib_+info"
+        self._plot(
+            ax=ax,
+            ylim=(0, 165),
+            figname=figname,
+            legend=True,
         )
 
 if __name__ == "__main__":
+    """ Usage - 使い方 """
+    
+    # yahooのtsvと実験データcsvセットを要確認！
     g_normal = GetData(
         dirpath="./",
         filename="all_apps_wide-2025-07-24.csv"
     )
+    ytask_normal = YahooTask("3589457371.tsv", g_normal)
 
-    g_private = GetData(
-        dirpath="./",
-        filename="all_apps_wide-2025-08-07.csv",
-    )
-
+    # 簡単な実験から得られたデータを表示
     print(g_normal)
-    print(g_private)
 
-    # for g in [g_normal, g_private]:
-    #     # いろいろ情報を返す
-    #     print(g)
-        
-    #     gp = GraphPlot(g, savefig=True)
-    #     gp.plot_total_contribution()
-    #     gp.plot_total_contribution(pledges=True)
-    #     gp.plot_contribution_per_round()
-    #     gp.plot_success_group_percentage()
+    # ホワイトリストを作成、成果報酬のヒストグラムを表示
+    ytask_normal.create_whitelist()
+    ytask_normal.show_point_histgram()
+
+    # グラフを作成・表示・保存
+    gp = GraphPlot(g_normal, savefig=True, debug=True)
+    gp.plot_total_contribution()
+    gp.plot_total_contribution(pledges=True)
+    gp.plot_contribution_per_round()
+    gp.plot_success_group_percentage()
