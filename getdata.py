@@ -305,11 +305,18 @@ class YahooTask:
         plt.show()
 
 class GraphPlot:
-    def __init__(self, data_loader: GetData, savefig: bool = False, debug: bool = False, figtype: str = None):
+    def __init__(
+            self,
+            data_loader: GetData,
+            savefig: bool = False,
+            debug: bool = False,
+            figtype: str = None,
+            color: str = "white"):
         self.data_loader = data_loader
         self.debug = debug
         self.dir_path = self.data_loader.dir_path
         self.savefig = savefig
+        self.color = color
         allowed_figtype = ["eps", "png"]
         if figtype in allowed_figtype:
             self.figtype = figtype
@@ -325,6 +332,7 @@ class GraphPlot:
             ylabel: str = None,
             xlabel: str = None,
             ylim: tuple[float, float] = None,
+            xlim: tuple[float, float] = None,
             yticks: list = None,
             savefig: bool = False,
             figtitle: str = None,
@@ -351,6 +359,8 @@ class GraphPlot:
             ax.set_xlabel(xlabel)
         if ylim:
             ax.set_ylim(ylim[0], ylim[1])
+        if xlim:
+            ax.set_xlim(xlim[0], xlim[1])
         if yticks:
             ax.set_yticks(yticks)
         if legend:
@@ -473,7 +483,7 @@ class GraphPlot:
         label = ["Uncertainty", "Uncertainty + Info"]
 
         fig, ax = plt.subplots()
-        ax.bar([0], [c_success_rate], width=0.8, facecolor="white", edgecolor="black", linewidth=2)
+        ax.bar([0], [c_success_rate], width=0.8, facecolor=self.color, edgecolor="black", linewidth=2)
         ax.bar([1], [cpi_success_rate], width=0.8, facecolor="black", edgecolor="black", linewidth=2)
         ax.set_xticks([0, 1])
         ax.set_xticklabels(label, fontsize=20)
@@ -486,7 +496,7 @@ class GraphPlot:
             figname="Success_percentage"
         )
 
-    def plot_individual_contrib(self, savefig: bool = False, bartype: str = "white"):
+    def plot_individual_contrib(self, savefig: bool = False):
         """
         9/3
         各参加者(individual)の貢献額
@@ -502,7 +512,7 @@ class GraphPlot:
         contrib_average = sum(y) / len(y)
 
         fig, ax = plt.subplots()
-        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black", label="Individual")
+        ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black", label="Individual")
         ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
         ax.text(0, contrib_average+0.75, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
         ax.tick_params(axis="x", length=0)
@@ -510,14 +520,14 @@ class GraphPlot:
         ax.set_xticklabels("")
         ax.set_ylabel("Individual total contributions (ECUs)", fontsize=16)
         ax.set_xlabel("Individual (sorted)", fontsize=20)
-        figname = "individual_contrib" if bartype == "white" else "individual_contrib_+info"
+        figname = "individual_contrib" if self.color == "white" else "individual_contrib_+info"
         self._plot(
             ax=ax,
             ylim=(0, 42),
             figname=figname
         )
     
-    def plot_group_contrib(self, savefig: bool = False, bartype: str = "white"):
+    def plot_group_contrib(self, savefig: bool = False):
         """
         9/3
         Groupの貢献額
@@ -537,10 +547,10 @@ class GraphPlot:
         contrib_average = sum(y) / len(y)
 
         fig, ax = plt.subplots()
-        ax.bar(range(len(y)), y, facecolor=bartype, edgecolor="black")
+        ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black")
         ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
         ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
-        if bartype == "white":
+        if self.color == "white":
             ax.text(5, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
         else:
             ax.text(0, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
@@ -553,14 +563,14 @@ class GraphPlot:
         ax.tick_params(axis="x", length=0)
         ax.tick_params(axis="y", labelsize=14)
         ax.set_xticklabels("")
-        figname = "group_contrib" if bartype == "white" else "group_contrib_+info"
+        figname = "group_contrib" if self.color == "white" else "group_contrib_+info"
         self._plot(
             ax=ax,
             ylim=(0, 165),
             figname=figname,
         )
 
-    def plot_pa_frequency(self, savefig: bool = False, facecolor="white"):
+    def plot_pa_frequency(self, savefig: bool = False):
         """
         9/10
         Public Accountとその周期(幅20のヒストグラムで描画)
@@ -582,7 +592,7 @@ class GraphPlot:
         xmin, xmax = 0, 160
         bins = np.arange(xmin, xmax + bin_width, bin_width)
         w = np.ones_like(vals) / len(vals)
-        ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=facecolor)
+        ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=self.color)
 
         self._plot(
             ax = ax,
@@ -590,7 +600,7 @@ class GraphPlot:
             xlabel="Public Account",
         )
     
-    def plot_pa_pledge(self, facecolors: str ="white"):
+    def plot_pa_pledge(self):
         """
         9/10
         Public Accountと提案額(Pledges)の散布図
@@ -615,14 +625,14 @@ class GraphPlot:
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
         fig, ax = plt.subplots()
-        ax.scatter(x, y, marker="o", facecolors=facecolors , edgecolors='black')
+        ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
         self._plot(
             ax=ax,
             ylabel="Public Account",
             xlabel="Pledges"
         )
 
-    def plot_target_pledge(self, facecolors: str ="white"):
+    def plot_target_pledge(self):
         """
         9/10
         Targetと提案額(Pledges)の散布図
@@ -643,11 +653,53 @@ class GraphPlot:
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
         fig, ax = plt.subplots()
-        ax.scatter(x, y, marker="o", facecolors=facecolors , edgecolors='black')
+        ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
         self._plot(
             ax=ax,
             ylabel="Target",
             xlabel="Pledges"
+        )
+    
+    def plot_box(self, other_datacls: GetData = None):
+        """
+        9/10
+        個人の合計貢献額についての箱ひげ図
+        """
+        contrib = [sum(x) for x in self.data_loader.get_contributions().values() if sum(x) >= 0]
+        contrib_p = [sum(x) for x in other_datacls.get_contributions().values() if sum(x) >= 0]
+        print(contrib_p)
+        fig, ax = plt.subplots()
+        bp = ax.boxplot([contrib, contrib_p], patch_artist=True, widths=0.3)
+        colors = ["white", "black"]
+        for p, c in zip(bp['boxes'], colors):
+            p.set_facecolor(c)
+            p.set_edgecolor("black")
+        ax.set_xticklabels(["T1", "T2"])
+        self._plot(
+            ax=ax,
+            ylabel="Individual contribution"
+        )
+
+    def plot_box_round(self, other_datacls: GetData = None):
+        r1_contrib = [sum(x[0:5]) for x in self.data_loader.get_contributions().values() if sum(x[0:5]) >= 0]
+        r1_contrib_p = [sum(x[0:5]) for x in other_datacls.get_contributions().values() if sum(x[0:5]) >= 0]
+        r6_contrib = [sum(x[5:]) for x in self.data_loader.get_contributions().values() if sum(x[5:]) >= 0]
+        r6_contrib_p = [sum(x[5:]) for x in other_datacls.get_contributions().values() if sum(x[5:]) >= 0]
+
+        fig, ax = plt.subplots()
+        bp = ax.boxplot([r1_contrib, r1_contrib_p, r6_contrib, r6_contrib_p], patch_artist=True, widths=0.3)
+        ax.axvline(x=2.5, color="black", linestyle="--")
+        import matplotlib.ticker as mticker
+        ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+        ax.yaxis.set_major_locator(mticker.MultipleLocator(2))
+        colors = ["white", "black", "white", "black"]
+        for p, c in zip(bp['boxes'], colors):
+            p.set_facecolor(c)
+            p.set_edgecolor("black")
+        ax.set_xticklabels(["T1: Round1-5", "T2: Round1-5", "T1: Round6-10", "T2: Round6-10"])
+        self._plot(
+            ax=ax,
+            ylabel="Individual contribution",
         )
 
 if __name__ == "__main__":
