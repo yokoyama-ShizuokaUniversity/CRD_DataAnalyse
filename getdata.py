@@ -2,9 +2,11 @@ import os
 import csv
 import ast
 from collections import Counter
+from contextlib import contextmanager
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 # vscode補完用
 from matplotlib.axes import Axes
 
@@ -209,6 +211,19 @@ class GetData:
             print(df)
         return df
 
+    def get_group_contribution(self, success_contrib: bool =True) -> dict[int, int]:
+        """
+        グループの最終公共基金(Final Public Account)を辞書形式で返す
+        """
+        contrib = self.get_success_contribution() if success_contrib else self.get_contributions()
+        group_contrib = {}
+        for k, v in self.group.items():
+            group_c = 0
+            for l in v:
+                group_c += sum(contrib[l])
+            group_contrib[k] = group_c
+        return group_contrib
+
     def __str__(self):
         """ 簡単にデータを表示 """
         ungrouped_reason = []
@@ -333,8 +348,8 @@ class GraphPlot:
             xlabel: str = None,
             ylim: tuple[float, float] = None,
             xlim: tuple[float, float] = None,
+            xticks: list = None,
             yticks: list = None,
-            savefig: bool = False,
             figtitle: str = None,
             figname: str = None,
             legend: bool = None,
@@ -363,6 +378,8 @@ class GraphPlot:
             ax.set_xlim(xlim[0], xlim[1])
         if yticks:
             ax.set_yticks(yticks)
+        if xticks:
+            ax.set_xticks(xticks)
         if legend:
             ax.legend()
         plt.tight_layout()
@@ -378,6 +395,14 @@ class GraphPlot:
         else:
             plt.show()
         plt.close()
+
+    @contextmanager
+    def canvas(self, **plot_args):
+        fig, ax = plt.subplots()
+        try:
+            yield ax
+        finally:
+            self._plot(ax=ax, **plot_args)
 
     def plot_total_contribution(self, pledges: bool = False, savefig: bool = None) -> None:
         """
@@ -482,19 +507,16 @@ class GraphPlot:
 
         label = ["Uncertainty", "Uncertainty + Info"]
 
-        fig, ax = plt.subplots()
-        ax.bar([0], [c_success_rate], width=0.8, facecolor=self.color, edgecolor="black", linewidth=2)
-        ax.bar([1], [cpi_success_rate], width=0.8, facecolor="black", edgecolor="black", linewidth=2)
-        ax.set_xticks([0, 1])
-        ax.set_xticklabels(label, fontsize=20)
-        ax.tick_params(axis="x", length=0)
-        ax.tick_params(axis="y", labelsize=14)
-        ax.set_ylabel("Fraction of successful groups", fontsize=20)
-        self._plot(
-            ax=ax,
+        with self.canvas(
             ylim=(0, 0.8),
-            figname="Success_percentage"
-        )
+            figname="Success_percentage",
+            xticks=[0, 1]) as ax:
+            ax.bar([0], [c_success_rate], width=0.8, facecolor=self.color, edgecolor="black", linewidth=2)
+            ax.bar([1], [cpi_success_rate], width=0.8, facecolor="black", edgecolor="black", linewidth=2)
+            ax.set_xticklabels(label, fontsize=20)
+            ax.tick_params(axis="x", length=0)
+            ax.tick_params(axis="y", labelsize=14)
+            ax.set_ylabel("Fraction of successful groups", fontsize=20)
 
     def plot_individual_contrib(self, savefig: bool = False):
         """
@@ -511,64 +533,51 @@ class GraphPlot:
 
         contrib_average = sum(y) / len(y)
 
-        fig, ax = plt.subplots()
-        ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black", label="Individual")
-        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
-        ax.text(0, contrib_average+0.75, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
-        ax.tick_params(axis="x", length=0)
-        ax.tick_params(axis="y", labelsize=14)
-        ax.set_xticklabels("")
-        ax.set_ylabel("Individual total contributions (ECUs)", fontsize=16)
-        ax.set_xlabel("Individual (sorted)", fontsize=20)
         figname = "individual_contrib" if self.color == "white" else "individual_contrib_+info"
-        self._plot(
-            ax=ax,
+        with self.canvas(
             ylim=(0, 42),
-            figname=figname
-        )
+            figname=figname) as ax:
+            ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black", label="Individual")
+            ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2, label="Average")
+            ax.text(0, contrib_average+0.75, f"Average : {contrib_average:.3f}", color="red", fontsize=20)
+            ax.tick_params(axis="x", length=0)
+            ax.tick_params(axis="y", labelsize=14)
+            ax.set_xticklabels("")
+            ax.set_ylabel("Individual total contributions (ECUs)", fontsize=16)
+            ax.set_xlabel("Individual (sorted)", fontsize=20)
     
     def plot_group_contrib(self, savefig: bool = False):
         """
         9/3
         Groupの貢献額
         """
-        contrib_dict = self.data_loader.get_contributions()
         group_target = self.data_loader.get_group_target()
-        print(contrib_dict)
-        group_contrib = []
-        for k, v in self.data_loader.group.items():
-            group_c = 0
-            for l in v:
-                group_c += sum(contrib_dict[l])
-            group_contrib.append((k, group_c))
+        group_contrib = list(self.data_loader.get_group_contribution().items())
         sorted_contrib = sorted(group_contrib, key=lambda x: x[1])
         y = [v[1] for v in sorted_contrib]
         target_y = [group_target[v[0]] for v in sorted_contrib]
         contrib_average = sum(y) / len(y)
 
-        fig, ax = plt.subplots()
-        ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black")
-        ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
-        ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
-        if self.color == "white":
-            ax.text(5, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
-        else:
-            ax.text(0, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
-        # 枠内に収める
-        # ax.legend(fontsize=16, loc="lower left", bbox_to_anchor=(0, 0.1))
-        # 枠外案
-        ax.legend(fontsize=16, loc="lower right", bbox_to_anchor=(1, -0.15))
-        ax.set_xlabel("Group (sorted)", fontsize=20, ha="left", x=0.2, labelpad=8)
-        ax.set_ylabel("Final public account (ECUs)", fontsize=20)
-        ax.tick_params(axis="x", length=0)
-        ax.tick_params(axis="y", labelsize=14)
-        ax.set_xticklabels("")
         figname = "group_contrib" if self.color == "white" else "group_contrib_+info"
-        self._plot(
-            ax=ax,
+        with self.canvas(
             ylim=(0, 165),
-            figname=figname,
-        )
+            figname=figname,) as ax:
+            ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black")
+            ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
+            ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
+            if self.color == "white":
+                ax.text(5, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+            else:
+                ax.text(0, contrib_average+3, f"Average : {contrib_average:.1f}", color="red", fontsize=20)
+            # 枠内に収める
+            # ax.legend(fontsize=16, loc="lower left", bbox_to_anchor=(0, 0.1))
+            # 枠外案
+            ax.legend(fontsize=16, loc="lower right", bbox_to_anchor=(1, -0.15))
+            ax.set_xlabel("Group (sorted)", fontsize=20, ha="left", x=0.2, labelpad=8)
+            ax.set_ylabel("Final public account (ECUs)", fontsize=20)
+            ax.tick_params(axis="x", length=0)
+            ax.tick_params(axis="y", labelsize=14)
+            ax.set_xticklabels("")
 
     def plot_pa_frequency(self, savefig: bool = False):
         """
@@ -577,28 +586,17 @@ class GraphPlot:
         """
         if savefig:
             self.savefig = savefig
-        contrib = self.data_loader.get_contributions()
-        group_contrib = {}
-        for k, v in self.data_loader.group.items():
-            group_c = 0
-            for l in v:
-                group_c += sum(contrib[l])
-            group_contrib[k] = group_c
+        group_contrib = self.data_loader.get_group_contribution(success_contrib=False)
 
-        fig, ax = plt.subplots()
-        print(group_contrib)
         vals = np.asarray(list(group_contrib.values()), dtype=float)
         bin_width = 20
         xmin, xmax = 0, 160
         bins = np.arange(xmin, xmax + bin_width, bin_width)
         w = np.ones_like(vals) / len(vals)
-        ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=self.color)
-
-        self._plot(
-            ax = ax,
+        with self.canvas(
             ylabel="Frequency",
-            xlabel="Public Account",
-        )
+            xlabel="Public Account",) as ax:
+            ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=self.color)
     
     def plot_pa_pledge(self):
         """
@@ -606,31 +604,20 @@ class GraphPlot:
         Public Accountと提案額(Pledges)の散布図
         """
         pledges = self.data_loader.get_participant_pledges()
-        contrib = self.data_loader.get_contributions()
-        group_contrib = {}
-        pledge_label = {}
-        for k, v in self.data_loader.group.items():
-            group_c = 0
-            for l in v:
-                group_c += sum(contrib[l])
-                pledge_label[l] = pledges[l]
-            group_contrib[k] = group_c
-        for l in pledge_label.keys():
-            pledge_label[l][0] = group_contrib[pledge_label[l][0]]
-        print(pledge_label)
-        r1_pledge_pa = [(v[0], int(v[1])) for v in pledge_label.values()]
-        r6_pledge_pa = [(v[0], int(v[2])) for v in pledge_label.values()]
+        group_contrib = self.data_loader.get_group_contribution(success_contrib=False)
+        for l in pledges.keys():
+            pledges[l][0] = group_contrib[pledges[l][0]]
+        r1_pledge_pa = [(v[0], int(v[1])) for v in pledges.values()]
+        r6_pledge_pa = [(v[0], int(v[2])) for v in pledges.values()]
         pledge_pa = r1_pledge_pa + r6_pledge_pa
         
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
-        fig, ax = plt.subplots()
-        ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
-        self._plot(
-            ax=ax,
+        
+        with self.canvas(
             ylabel="Public Account",
-            xlabel="Pledges"
-        )
+            xlabel="Pledges") as ax:
+            ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
 
     def plot_target_pledge(self):
         """
@@ -639,26 +626,19 @@ class GraphPlot:
         """
         pledges = self.data_loader.get_participant_pledges()
         target = self.data_loader.get_group_target()
-        pledge_label = {}
-        for k, v in self.data_loader.group.items():
-            for l in v:
-                pledge_label[l] = pledges[l]
-        for l in pledge_label.keys():
-            pledge_label[l][0] = target[pledge_label[l][0]]
-        print(pledge_label)
-        r1_pledge_pa = [(v[0], int(v[1])) for v in pledge_label.values()]
-        r6_pledge_pa = [(v[0], int(v[2])) for v in pledge_label.values()]
+        for l in pledges.keys():
+            pledges[l][0] = target[pledges[l][0]]
+        r1_pledge_pa = [(v[0], int(v[1])) for v in pledges.values()]
+        r6_pledge_pa = [(v[0], int(v[2])) for v in pledges.values()]
         pledge_pa = r1_pledge_pa + r6_pledge_pa
         
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
-        fig, ax = plt.subplots()
-        ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
-        self._plot(
-            ax=ax,
+
+        with self.canvas(
             ylabel="Target",
-            xlabel="Pledges"
-        )
+            xlabel="Pledges") as ax:
+            ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
     
     def plot_box(self, other_datacls: GetData = None):
         """
@@ -667,18 +647,14 @@ class GraphPlot:
         """
         contrib = [sum(x) for x in self.data_loader.get_contributions().values() if sum(x) >= 0]
         contrib_p = [sum(x) for x in other_datacls.get_contributions().values() if sum(x) >= 0]
-        print(contrib_p)
-        fig, ax = plt.subplots()
-        bp = ax.boxplot([contrib, contrib_p], patch_artist=True, widths=0.3)
-        colors = ["white", "black"]
-        for p, c in zip(bp['boxes'], colors):
-            p.set_facecolor(c)
-            p.set_edgecolor("black")
-        ax.set_xticklabels(["T1", "T2"])
-        self._plot(
-            ax=ax,
-            ylabel="Individual contribution"
-        )
+
+        with self.canvas(ylabel="Individual contribution") as ax:
+            bp = ax.boxplot([contrib, contrib_p], patch_artist=True, widths=0.3)
+            colors = ["white", "black"]
+            for p, c in zip(bp['boxes'], colors):
+                p.set_facecolor(c)
+                p.set_edgecolor("black")
+            ax.set_xticklabels(["T1", "T2"])
 
     def plot_box_round(self, other_datacls: GetData = None):
         r1_contrib = [sum(x[0:5]) for x in self.data_loader.get_contributions().values() if sum(x[0:5]) >= 0]
@@ -686,21 +662,16 @@ class GraphPlot:
         r6_contrib = [sum(x[5:]) for x in self.data_loader.get_contributions().values() if sum(x[5:]) >= 0]
         r6_contrib_p = [sum(x[5:]) for x in other_datacls.get_contributions().values() if sum(x[5:]) >= 0]
 
-        fig, ax = plt.subplots()
-        bp = ax.boxplot([r1_contrib, r1_contrib_p, r6_contrib, r6_contrib_p], patch_artist=True, widths=0.3)
-        ax.axvline(x=2.5, color="black", linestyle="--")
-        import matplotlib.ticker as mticker
-        ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-        ax.yaxis.set_major_locator(mticker.MultipleLocator(2))
-        colors = ["white", "black", "white", "black"]
-        for p, c in zip(bp['boxes'], colors):
-            p.set_facecolor(c)
-            p.set_edgecolor("black")
-        ax.set_xticklabels(["T1: Round1-5", "T2: Round1-5", "T1: Round6-10", "T2: Round6-10"])
-        self._plot(
-            ax=ax,
-            ylabel="Individual contribution",
-        )
+        with self.canvas(ylabel="Individual contribution") as ax:
+            bp = ax.boxplot([r1_contrib, r1_contrib_p, r6_contrib, r6_contrib_p], patch_artist=True, widths=0.3)
+            ax.axvline(x=2.5, color="black", linestyle="--")
+            ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+            ax.yaxis.set_major_locator(mticker.MultipleLocator(2))
+            colors = ["white", "black", "white", "black"]
+            for p, c in zip(bp['boxes'], colors):
+                p.set_facecolor(c)
+                p.set_edgecolor("black")
+            ax.set_xticklabels(["T1: Round1-5", "T2: Round1-5", "T1: Round6-10", "T2: Round6-10"])
 
 if __name__ == "__main__":
     """ Usage - 使い方 """
