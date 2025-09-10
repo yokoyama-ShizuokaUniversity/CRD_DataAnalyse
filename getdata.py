@@ -1,9 +1,10 @@
 import os
 import csv
-import pandas as pd
-import matplotlib.pyplot as plt
 import ast
-
+from collections import Counter
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 # vscode補完用
 from matplotlib.axes import Axes
 
@@ -557,6 +558,96 @@ class GraphPlot:
             ax=ax,
             ylim=(0, 165),
             figname=figname,
+        )
+
+    def plot_pa_frequency(self, savefig: bool = False, facecolor="white"):
+        """
+        9/10
+        Public Accountとその周期(幅20のヒストグラムで描画)
+        """
+        if savefig:
+            self.savefig = savefig
+        contrib = self.data_loader.get_contributions()
+        group_contrib = {}
+        for k, v in self.data_loader.group.items():
+            group_c = 0
+            for l in v:
+                group_c += sum(contrib[l])
+            group_contrib[k] = group_c
+
+        fig, ax = plt.subplots()
+        print(group_contrib)
+        vals = np.asarray(list(group_contrib.values()), dtype=float)
+        bin_width = 20
+        xmin, xmax = 0, 160
+        bins = np.arange(xmin, xmax + bin_width, bin_width)
+        w = np.ones_like(vals) / len(vals)
+        ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=facecolor)
+
+        self._plot(
+            ax = ax,
+            ylabel="Frequency",
+            xlabel="Public Account",
+        )
+    
+    def plot_pa_pledge(self, facecolors: str ="white"):
+        """
+        9/10
+        Public Accountと提案額(Pledges)の散布図
+        """
+        pledges = self.data_loader.get_participant_pledges()
+        contrib = self.data_loader.get_contributions()
+        group_contrib = {}
+        pledge_label = {}
+        for k, v in self.data_loader.group.items():
+            group_c = 0
+            for l in v:
+                group_c += sum(contrib[l])
+                pledge_label[l] = pledges[l]
+            group_contrib[k] = group_c
+        for l in pledge_label.keys():
+            pledge_label[l][0] = group_contrib[pledge_label[l][0]]
+        print(pledge_label)
+        r1_pledge_pa = [(v[0], int(v[1])) for v in pledge_label.values()]
+        r6_pledge_pa = [(v[0], int(v[2])) for v in pledge_label.values()]
+        pledge_pa = r1_pledge_pa + r6_pledge_pa
+        
+        x = [s[1] for s in pledge_pa]
+        y = [s[0] for s in pledge_pa]
+        fig, ax = plt.subplots()
+        ax.scatter(x, y, marker="o", facecolors=facecolors , edgecolors='black')
+        self._plot(
+            ax=ax,
+            ylabel="Public Account",
+            xlabel="Pledges"
+        )
+
+    def plot_target_pledge(self, facecolors: str ="white"):
+        """
+        9/10
+        Targetと提案額(Pledges)の散布図
+        """
+        pledges = self.data_loader.get_participant_pledges()
+        target = self.data_loader.get_group_target()
+        pledge_label = {}
+        for k, v in self.data_loader.group.items():
+            for l in v:
+                pledge_label[l] = pledges[l]
+        for l in pledge_label.keys():
+            pledge_label[l][0] = target[pledge_label[l][0]]
+        print(pledge_label)
+        r1_pledge_pa = [(v[0], int(v[1])) for v in pledge_label.values()]
+        r6_pledge_pa = [(v[0], int(v[2])) for v in pledge_label.values()]
+        pledge_pa = r1_pledge_pa + r6_pledge_pa
+        
+        x = [s[1] for s in pledge_pa]
+        y = [s[0] for s in pledge_pa]
+        fig, ax = plt.subplots()
+        ax.scatter(x, y, marker="o", facecolors=facecolors , edgecolors='black')
+        self._plot(
+            ax=ax,
+            ylabel="Target",
+            xlabel="Pledges"
         )
 
 if __name__ == "__main__":
