@@ -222,6 +222,10 @@ class GetData:
             for l in v:
                 group_c += sum(contrib[l])
             group_contrib[k] = group_c
+
+        if self.debug:
+            print(group_contrib)
+
         return group_contrib
 
     def __str__(self):
@@ -468,8 +472,9 @@ class GraphPlot:
             if self.debug:
                 break
 
-    def plot_success_group_percentage(self, savefig: bool = False) -> None:
+    def _plot_success_group_percentage(self, savefig: bool = False) -> None:
         """
+        (!別メソッドに移行、保存不可)
         成功したグループの割合を棒グラフで表示する。
         """
         if savefig:
@@ -480,15 +485,12 @@ class GraphPlot:
         success_or_not_group = [len(success_group), len(failed_group)]
         success_or_not_per_group = [x/sum(success_or_not_group) for x in success_or_not_group]
 
-        fig, ax = plt.subplots()
-        ax.bar(label, success_or_not_per_group, width=0.8)
-        self._plot(
-            ax=ax
-        )
+        with self.canvas(figtitle="success_ratio") as ax:
+            ax.bar(label, success_or_not_per_group, width=0.8)
 
     def plot_success_percentage_ver2(self, other_datacls: GetData = None, savefig: bool = False):
         """
-        9/3追記
+        9/3
         グループの割合を棒グラフで表示する。1枚にまとめ、成功率だけ表示
         """
         if savefig:
@@ -561,7 +563,7 @@ class GraphPlot:
         figname = "group_contrib" if self.color == "white" else "group_contrib_+info"
         with self.canvas(
             ylim=(0, 165),
-            figname=figname,) as ax:
+            figname=figname) as ax:
             ax.bar(range(len(y)), y, facecolor=self.color, edgecolor="black")
             ax.scatter(range(len(target_y)), target_y, marker="o", color="orange", label="Target")
             ax.axhline(y=contrib_average, color="red", linestyle="--", linewidth=2)
@@ -595,7 +597,8 @@ class GraphPlot:
         w = np.ones_like(vals) / len(vals)
         with self.canvas(
             ylabel="Frequency",
-            xlabel="Public Account",) as ax:
+            xlabel="Public Account",
+            figname="PublicAccount_frequency") as ax:
             ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=self.color)
     
     def plot_pa_pledge(self):
@@ -616,7 +619,8 @@ class GraphPlot:
         
         with self.canvas(
             ylabel="Public Account",
-            xlabel="Pledges") as ax:
+            xlabel="Pledges",
+            figname="PublicAccount_pledges") as ax:
             ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
 
     def plot_target_pledge(self):
@@ -637,7 +641,8 @@ class GraphPlot:
 
         with self.canvas(
             ylabel="Target",
-            xlabel="Pledges") as ax:
+            xlabel="Pledges",
+            figname="Target_pledges") as ax:
             ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
     
     def plot_box(self, other_datacls: GetData = None):
@@ -648,7 +653,7 @@ class GraphPlot:
         contrib = [sum(x) for x in self.data_loader.get_contributions().values() if sum(x) >= 0]
         contrib_p = [sum(x) for x in other_datacls.get_contributions().values() if sum(x) >= 0]
 
-        with self.canvas(ylabel="Individual contribution") as ax:
+        with self.canvas(ylabel="Individual contribution", figname="contrib_boxes") as ax:
             bp = ax.boxplot([contrib, contrib_p], patch_artist=True, widths=0.3)
             colors = ["white", "black"]
             for p, c in zip(bp['boxes'], colors):
@@ -662,7 +667,7 @@ class GraphPlot:
         r6_contrib = [sum(x[5:]) for x in self.data_loader.get_contributions().values() if sum(x[5:]) >= 0]
         r6_contrib_p = [sum(x[5:]) for x in other_datacls.get_contributions().values() if sum(x[5:]) >= 0]
 
-        with self.canvas(ylabel="Individual contribution") as ax:
+        with self.canvas(ylabel="Individual contribution", figname="round_contrib_boxes") as ax:
             bp = ax.boxplot([r1_contrib, r1_contrib_p, r6_contrib, r6_contrib_p], patch_artist=True, widths=0.3)
             ax.axvline(x=2.5, color="black", linestyle="--")
             ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
@@ -695,4 +700,3 @@ if __name__ == "__main__":
     gp.plot_total_contribution()
     gp.plot_total_contribution(pledges=True)
     gp.plot_contribution_per_round()
-    gp.plot_success_group_percentage()
