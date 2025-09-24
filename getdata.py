@@ -21,7 +21,9 @@ class GetData:
         "r1_pledge": 'crd_cost_information.1.player.pledge',
         "r6_pledge": 'crd_cost_information.6.player.pledge',
         "id": "participant.id_in_session",
-        "surveys": "crd_cost_information_survey"
+        "surveys": "crd_cost_information_survey",
+        "r1_paidcost": "crd_cost_information.1.player.paid_cost",
+        "r6_paidcost": "crd_cost_information.6.player.paid_cost",
     }
     
     def __init__(
@@ -361,6 +363,7 @@ class GraphPlot:
         """
         表示の共通処理、表示または保存するための内部メソッド
         """
+        fontsize = 20
         csv_date = "".join(self.data_loader.filename.replace(".csv", '').split('-')[1:])
         # save dir check'
         if figtitle:
@@ -369,13 +372,16 @@ class GraphPlot:
             savefig_path = f"{self.dir_path}/{csv_date}_Figures"
         os.makedirs(savefig_path, exist_ok=True)
 
+        ax.tick_params(axis="y", labelsize=14)
+        ax.tick_params(axis="x", labelsize=14)
+
         if title:
             figname = title
             ax.set_title(title)
         if ylabel:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontsize=fontsize)
         if xlabel:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontsize=fontsize)
         if ylim:
             ax.set_ylim(ylim[0], ylim[1])
         if xlim:
@@ -662,6 +668,10 @@ class GraphPlot:
             ax.set_xticklabels(["T1", "T2"])
 
     def plot_box_round(self, other_datacls: GetData = None):
+        """
+        9/10
+        ラウンド1-5,6-10に分けた個人の貢献額についての箱ひげ図
+        """
         r1_contrib = [sum(x[0:5]) for x in self.data_loader.get_contributions().values() if sum(x[0:5]) >= 0]
         r1_contrib_p = [sum(x[0:5]) for x in other_datacls.get_contributions().values() if sum(x[0:5]) >= 0]
         r6_contrib = [sum(x[5:]) for x in self.data_loader.get_contributions().values() if sum(x[5:]) >= 0]
@@ -677,6 +687,45 @@ class GraphPlot:
                 p.set_facecolor(c)
                 p.set_edgecolor("black")
             ax.set_xticklabels(["T1: Round1-5", "T2: Round1-5", "T1: Round6-10", "T2: Round6-10"])
+
+    def plot_diff_targets_group(self, other_datacls: GetData = None):
+        """
+        9/24
+        ターゲットからの差分の分布（グループについて）
+        """
+        # T1 - Uncertainly
+        targets = self.data_loader.get_group_target()
+        pa = self.data_loader.get_group_contribution(False)
+        diffs = {}
+        for g in self.data_loader.group.keys():
+            diffs[g] = targets[g] - pa[g]
+        # T2 - Uncertainly + Private
+        targets_p = other_datacls.get_group_target()
+        pa_p = other_datacls.get_group_contribution(False)
+        diffs_p = {}
+        for g in other_datacls.group.keys():
+            diffs_p[g] = targets_p[g] - pa_p[g]
+        print(diffs)
+        print(diffs_p)
+        print(f"T1 最大値:{max(diffs.values())}, 最小値:{min(diffs.values())}")
+        with self.canvas(
+            ylabel="Difference between\ntargets and public account",
+            figname="diff_targets_group",
+            ylim=(-160, 160),
+            yticks=list(np.arange(-160, 161, 40))) as ax:
+            bp = ax.boxplot([list(diffs.values()), list(diffs_p.values())], patch_artist=True, widths=0.3)
+            colors = ["white", "black"]
+            for p, c in zip(bp['boxes'], colors):
+                p.set_facecolor(c)
+                p.set_edgecolor("black")
+            ax.set_xticklabels(["T1", "T2"])
+    
+    def plot_diff_targets_T2_individual(self):
+        if self.color != "black":
+            print("T2の情報あり・なしについてのグラフです。")
+            print("インスタンスが正しいか確認してください。")
+        
+        self.data_loader.
 
 if __name__ == "__main__":
     """ Usage - 使い方 """
