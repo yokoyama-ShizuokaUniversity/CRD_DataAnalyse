@@ -230,6 +230,38 @@ class GetData:
 
         return group_contrib
 
+    def get_paidcost_label(self) -> dict[int, tuple[bool, bool]]:
+        """
+        情報を買った人を返す。ラベルをキーとして、Round1,6それぞれで分けてboolで返す。
+        """
+        paidcost_df = self.data_df[[self.COLUMNS['label'], self.COLUMNS['r1_paidcost'], self.COLUMNS['r6_paidcost']]]
+        paidcost = {}
+        state = None
+        for _, col in paidcost_df.iterrows():
+            if col[self.COLUMNS['r1_paidcost']] == 1:
+                state = (True, False)
+            elif col[self.COLUMNS['r6_paidcost']] == 1:
+                state = (False, True)
+            else:
+                state = (False, False)
+            paidcost[int(col[self.COLUMNS['label']])] = state
+        return paidcost
+    
+    def get_paidcost_num(self) -> tuple[int, int]:
+        """
+        情報を買った人の数を(round1, round6)という形で返す。
+        """
+        r1_cnt, r6_cnt = 0, 0
+        for r1, r6 in self.get_paidcost_label.values():
+            if r1 is True:
+                r1_cnt += 1
+            if r6 is True:
+                r6_cnt += 1
+        if self.debug:
+            print(r1_cnt, r6_cnt)
+        return (r1_cnt, r6_cnt)
+        
+        
     def __str__(self):
         """ 簡単にデータを表示 """
         ungrouped_reason = []
@@ -559,8 +591,11 @@ class GraphPlot:
         9/3
         Groupの貢献額
         """
+        if savefig:
+            self.savefig = savefig
+
         group_target = self.data_loader.get_group_target()
-        group_contrib = list(self.data_loader.get_group_contribution().items())
+        group_contrib = list(self.data_loader.get_group_contribution(False).items())
         sorted_contrib = sorted(group_contrib, key=lambda x: x[1])
         y = [v[1] for v in sorted_contrib]
         target_y = [group_target[v[0]] for v in sorted_contrib]
@@ -601,10 +636,12 @@ class GraphPlot:
         xmin, xmax = 0, 160
         bins = np.arange(xmin, xmax + bin_width, bin_width)
         w = np.ones_like(vals) / len(vals)
+        figname = "PublicAccount_frequency" if self.color == "white" else "PublicAccount_frequency_+info"
         with self.canvas(
             ylabel="Frequency",
             xlabel="Public Account",
-            figname="PublicAccount_frequency") as ax:
+            ylim=(0, 0.32),
+            figname=figname) as ax:
             ax.hist(vals, bins=bins, weights=w, edgecolor="black", facecolor=self.color)
     
     def plot_pa_pledge(self):
@@ -623,10 +660,11 @@ class GraphPlot:
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
         
+        figname = "PublicAccount_pledges" if self.color == "white" else "PublicAccount_pledges_+info"
         with self.canvas(
             ylabel="Public Account",
             xlabel="Pledges",
-            figname="PublicAccount_pledges") as ax:
+            figname=figname) as ax:
             ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
 
     def plot_target_pledge(self):
@@ -645,10 +683,11 @@ class GraphPlot:
         x = [s[1] for s in pledge_pa]
         y = [s[0] for s in pledge_pa]
 
+        figname = "Target_pledges" if self.color == "white" else "Target_pledges_+info"
         with self.canvas(
             ylabel="Target",
             xlabel="Pledges",
-            figname="Target_pledges") as ax:
+            figname=figname) as ax:
             ax.scatter(x, y, marker="o", facecolors=self.color , edgecolors='black')
     
     def plot_box(self, other_datacls: GetData = None):
@@ -686,7 +725,7 @@ class GraphPlot:
             for p, c in zip(bp['boxes'], colors):
                 p.set_facecolor(c)
                 p.set_edgecolor("black")
-            ax.set_xticklabels(["T1: Round1-5", "T2: Round1-5", "T1: Round6-10", "T2: Round6-10"])
+            ax.set_xticklabels(["Round1-5", "Round1-5", "Round6-10", "Round6-10"], fontsize=14)
 
     def plot_diff_targets_group(self, other_datacls: GetData = None):
         """
@@ -709,7 +748,7 @@ class GraphPlot:
         print(diffs_p)
         print(f"T1 最大値:{max(diffs.values())}, 最小値:{min(diffs.values())}")
         with self.canvas(
-            ylabel="Difference between\ntargets and public account",
+            ylabel="Difference between\nTargets and Public account",
             figname="diff_targets_group",
             ylim=(-160, 160),
             yticks=list(np.arange(-160, 161, 40))) as ax:
@@ -721,11 +760,55 @@ class GraphPlot:
             ax.set_xticklabels(["T1", "T2"])
     
     def plot_diff_targets_T2_individual(self):
+        """
+        9/24
+        T2(Uncertainty + Private)で、情報を買ったか、買わなかったかで個人に対しての、
+        ターゲットを4分割したうえでの差分の箱ひげ図をつくる。
+        """
         if self.color != "black":
             print("T2の情報あり・なしについてのグラフです。")
             print("インスタンスが正しいか確認してください。")
-        
-        self.data_loader.
+
+        # コストを払ったかどうかで分類する
+        paidcosts = self.data_loader.get_paidcost_label()
+        paid_or_not = {}
+        for l, v in paidcosts.items():
+            paid_or_not[l] = False if v == (False, False) else True
+        print(paid_or_not)
+        # 各個人の属するグループのTargetを4分して、個人当たり出すべき額を求める
+        individual_targets = {}
+        for g, v in self.data_loader.get_group_target().items():
+            individual_targets[g] = v / 4
+        print(individual_targets)
+        # 各個人の貢献額
+        individual_contrib = {}
+        for l, c in self.data_loader.get_contributions().items():
+            individual_contrib[l] = sum(c)
+        print(individual_contrib)
+        # 差分を出す
+        paid = []
+        unpaid = []
+        for g, ls in self.data_loader.group.items():
+            target = individual_targets[g]
+            for l in ls:
+                if paid_or_not[l] is True:
+                    paid.append(target - individual_contrib[l])
+                else:
+                    unpaid.append(target - individual_contrib[l])
+        print(len(paid))
+
+        figname = "diff_target_and_paid_cost" if self.color == "white" else "diff_target_and_paid_cost_+info"
+        with self.canvas(
+            figname=figname,
+            ylim=(-45, 45),
+            yticks=list(np.arange(-40, 41, 10))) as ax:
+            bp = ax.boxplot([paid, unpaid], patch_artist=True, widths=0.3)
+            colors = ["white", "black"]
+            for p, c in zip(bp['boxes'], colors):
+                p.set_facecolor(c)
+                p.set_edgecolor("black")
+            ax.set_xticklabels(["Paid", "Not paid"])
+            ax.set_ylabel(ylabel="Difference between Equal Share\nof Target and Individual Contribution", fontsize=16)
 
 if __name__ == "__main__":
     """ Usage - 使い方 """
